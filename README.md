@@ -2,7 +2,7 @@
 
 This repository is a small, end-to-end reference for proximity-triggered web content:
 
-- one Arduino sketch, flashed with four profiles, continuously advertises valid iBeacon manufacturer frames;
+- one Arduino sketch, flashed with four profiles, advertises valid iBeacon frames, responds to scans as `SoDBeacon`, and exposes an optional read/notify GATT characteristic;
 - one browser page listens for those frames and maps each beacon to a Coca-Cola, Maggi, Zepto, or Apple sample offer;
 - the page includes manual preview buttons so the interface can be demonstrated without BLE hardware.
 
@@ -46,7 +46,23 @@ The 25-byte manufacturer data for profile 1 is:
 
 `4C 00` is Apple’s Bluetooth company identifier in on-air byte order, `02 15` is the iBeacon type/length marker, `00 64` is major 100, `00 01` is minor 1, and `C5` is the signed calibrated transmit-power byte (-59 dBm). Profiles 2–4 change the minor bytes to `00 02`, `00 03`, and `00 04`.
 
-The sketch also adds the three-byte BLE flags field, producing a 30-byte legacy advertisement. It intentionally omits a local device name because legacy advertising data is limited to 31 bytes.
+The sketch also adds the three-byte BLE flags field, producing a 30-byte legacy advertisement. That primary packet intentionally omits the local name because legacy advertising data is limited to 31 bytes.
+
+The name and GATT service UUID are placed in the separate scan-response packet, so the full iBeacon manufacturer frame remains unchanged.
+
+## BLE discovery and optional GATT
+
+Every board uses the same discovery name and GATT UUIDs:
+
+| Field | Value |
+|---|---|
+| Scan-response name | `SoDBeacon` |
+| GATT service | `8E7A0001-4C3B-2D1E-0F10-F0E1D2C3B4A5` |
+| Read/notify characteristic | `8E7A0002-4C3B-2D1E-0F10-F0E1D2C3B4A5` |
+
+The characteristic contains a compact ASCII status value such as `P1|M100|m1|N0000`: profile, major, minor, and notification sequence. A connected GATT client can read it and subscribe to a notification every two seconds.
+
+GATT is optional and is not used for campaign pop-ups. The webpage receives the public iBeacon manufacturer data directly from advertisements, so it never calls `requestDevice()`, connects to a GATT server, or subscribes to the characteristic.
 
 ## Hardware
 
@@ -71,10 +87,18 @@ These steps are the same on Windows and macOS.
 5. At the top of the sketch, set `BEACON_PROFILE` to `1`.
 6. Select **Tools → Board → esp32 → ESP32 Dev Module**. This target works for common ESP32 DevKit V1 and ESP32-WROOM-32 boards.
 7. Select the board’s serial port and upload. If upload waits at “Connecting…”, hold **BOOT**, start the upload, and release **BOOT** when writing begins.
-8. Open Serial Monitor at **115200 baud**. Confirm the profile, UUID, major/minor, hex manufacturer data, and “Advertising continuously” message.
+8. Open Serial Monitor at **115200 baud**. Confirm the profile, UUID, major/minor, manufacturer data, `SoDBeacon` scan-response name, GATT UUIDs, and “Advertising continuously” message.
 9. Repeat for the other boards with `BEACON_PROFILE` values `2`, `3`, and `4`.
 
-No third-party Arduino library is required; the sketch uses the BLE library bundled with Espressif’s Arduino core.
+No third-party Arduino library is required; `BLEBeacon`, the GATT server classes, and the advertising classes are bundled with Espressif’s Arduino core.
+
+### Verify with nRF Connect
+
+1. Start a BLE scan in nRF Connect and look for `SoDBeacon`.
+2. The raw advertisement should contain manufacturer company ID `0x004C` and iBeacon bytes beginning `02 15`.
+3. Connecting is optional. If you connect, open service `8E7A0001…B4A5`.
+4. Read characteristic `8E7A0002…B4A5`, then enable notifications to receive the compact status value every two seconds.
+5. Disconnect when finished; the sketch restarts advertising automatically.
 
 ### Serial-port notes
 
@@ -123,7 +147,7 @@ Direct iBeacon advertisement scanning is not currently available to a Windows we
 
 ## Runtime behavior
 
-1. After a click, the page requests a foreground advertisement scan and displays live packet counters.
+1. After a click, the page requests a foreground advertisement scan and displays live packet counters. It does not establish a GATT connection.
 2. All received advertisements are processed locally; the page keeps no identities and uploads nothing.
 3. `lib/beacons.ts` selects manufacturer data for company ID `0x004C`, then validates the iBeacon `02 15` prefix, UUID, and major value.
 4. Minor `1–4` selects the matching offer.
@@ -145,10 +169,11 @@ RSSI-based distance is only an estimate. Walls, shelving, people, antenna orient
 - Confirm `requestLEScan` support with `"requestLEScan" in navigator.bluetooth` in Chrome DevTools.
 - On macOS/Android, enable the experimental web-platform flag and relaunch Chrome.
 - Keep the scanner tab visible. Chromium stops an advertisement scan when its page is hidden; click **Start scanner** again after returning to it.
-- Watch the scanner counters: **All ads = 0** means Chrome/OS is not delivering advertisements; **All ads > 0, Apple = 0** means BLE works but no Apple manufacturer frame is arriving; **Apple > 0, iBeacon = 0** means the payload is not parsing as iBeacon; **iBeacon > 0, Matched = 0** means UUID, major, or minor differs from the campaign map.
+- Watch the scanner counters: **All ads = 0** means Chrome/OS is not delivering advertisements; **SoD name > 0** confirms the scan-response name arrived; **All ads > 0, Apple = 0** means BLE works but no Apple manufacturer frame is arriving; **Apple > 0, iBeacon = 0** means the payload is not parsing as iBeacon; **iBeacon > 0, Matched = 0** means UUID, major, or minor differs from the campaign map.
 - Open `chrome://bluetooth-internals` in Chrome to check whether Chromium itself can see nearby BLE devices. If it sees none, the problem is below the web page (Chrome, macOS permission, adapter, or radio state).
 - Test the ESP32 packet with a native BLE scanner before debugging the page.
 - Move the ESP32 within one or two metres and keep the page in the foreground.
+- Disconnect nRF Connect or another GATT client before browser testing. A normal single-connection ESP32 stops advertising while that client is connected and resumes after disconnection.
 
 ### The wrong offer appears
 

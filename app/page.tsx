@@ -27,6 +27,8 @@ interface BluetoothLEScan {
 
 interface BluetoothAdvertisementEvent extends Event {
   manufacturerData: Map<number, DataView>;
+  name?: string;
+  device?: { name?: string | null };
   rssi?: number;
 }
 
@@ -53,6 +55,7 @@ type BeaconSighting = {
 
 type ScanStats = {
   advertisements: number;
+  sodNamedFrames: number;
   appleFrames: number;
   iBeaconFrames: number;
   campaignMatches: number;
@@ -64,6 +67,7 @@ const MINIMUM_RSSI = -86;
 const POPUP_COOLDOWN_MS = 20_000;
 const EMPTY_SCAN_STATS: ScanStats = {
   advertisements: 0,
+  sodNamedFrames: 0,
   appleFrames: 0,
   iBeaconFrames: 0,
   campaignMatches: 0,
@@ -193,6 +197,7 @@ export default function Home() {
 
   const handleAdvertisement = useCallback((event: Event) => {
     const advertisement = event as BluetoothAdvertisementEvent;
+    const advertisedName = advertisement.name ?? advertisement.device?.name ?? undefined;
     const appleData = advertisement.manufacturerData?.get(APPLE_COMPANY_ID);
     const parsed = appleData ? parseIBeacon(appleData, advertisement.rssi) : null;
     const offer = parsed ? findOffer(parsed) : undefined;
@@ -200,6 +205,7 @@ export default function Home() {
 
     setScanStats((previous) => ({
       advertisements: previous.advertisements + 1,
+      sodNamedFrames: previous.sodNamedFrames + (advertisedName === "SoDBeacon" ? 1 : 0),
       appleFrames: previous.appleFrames + (appleData ? 1 : 0),
       iBeaconFrames: previous.iBeaconFrames + (parsed ? 1 : 0),
       campaignMatches: previous.campaignMatches + (offer ? 1 : 0),
@@ -303,6 +309,9 @@ export default function Home() {
     if (scanState === "scanning" && scanStats.appleFrames > 0) {
       return `Chrome received ${scanStats.appleFrames} Apple manufacturer frame${scanStats.appleFrames === 1 ? "" : "s"}, but none parsed as iBeacon.`;
     }
+    if (scanState === "scanning" && scanStats.sodNamedFrames > 0) {
+      return "Chrome sees SoDBeacon by its scan-response name, but has not delivered its iBeacon manufacturer data yet.";
+    }
     if (scanState === "scanning" && scanStats.advertisements > 0) {
       return `Chrome is receiving BLE advertisements (${scanStats.advertisements}), but none currently contains Apple iBeacon data.`;
     }
@@ -350,7 +359,7 @@ export default function Home() {
           <span className="logo-signal" aria-hidden="true"><i /><i /><i /></span>
           Beacon Shelf
         </a>
-        <div className="topbar-note">ESP32 × iBeacon × Web Bluetooth</div>
+        <div className="topbar-note">ESP32 × iBeacon + GATT × Web Bluetooth</div>
         <a className="guide-link" href="#how-it-works">How it works <span>↓</span></a>
       </header>
 
@@ -359,8 +368,8 @@ export default function Home() {
           <div className="eyebrow"><span /> Live proximity prototype</div>
           <h1>Walk in.<br /><em>Offers wake up.</em></h1>
           <p className="hero-lede">
-            A four-beacon retail demo. ESP32 transmitters announce tiny iBeacon frames;
-            this page turns a nearby signal into the right branded moment.
+            A four-beacon retail demo. Each ESP32 advertises an iBeacon campaign frame
+            plus an optional SoDBeacon GATT endpoint; pop-ups use advertisements only.
           </p>
           <div className="hero-meta">
             <span>01</span><p>One campaign UUID</p>
@@ -394,6 +403,7 @@ export default function Home() {
 
           <dl className="scan-metrics" aria-label="Live Bluetooth scan diagnostics">
             <div><dt>All ads</dt><dd>{scanStats.advertisements}</dd></div>
+            <div><dt>SoD name</dt><dd>{scanStats.sodNamedFrames}</dd></div>
             <div><dt>Apple</dt><dd>{scanStats.appleFrames}</dd></div>
             <div><dt>iBeacon</dt><dd>{scanStats.iBeaconFrames}</dd></div>
             <div><dt>Matched</dt><dd>{scanStats.campaignMatches}</dd></div>
@@ -407,7 +417,8 @@ export default function Home() {
               Stop
             </button>
           </div>
-          <p className="privacy-note">macOS scan: regular Google Chrome only · not an in-app browser</p>
+          <p className="privacy-note">Campaign trigger: advertisements only · no GATT connection</p>
+          <p className="privacy-note privacy-note-secondary">macOS scan: regular Google Chrome only · not an in-app browser</p>
           <p className="privacy-note privacy-note-secondary">
             Foreground only · ads filtered locally · nothing uploaded · last signal {scanStats.lastAdvertisementAt ? `${scanStats.lastRssi ?? "—"} dBm` : "—"}
           </p>
@@ -456,13 +467,14 @@ export default function Home() {
           <p className="section-index">03 / SIGNAL PATH</p>
           <h2 id="how-heading">From air packet<br />to offer in three beats.</h2>
           <p>
-            No connection is made to a beacon. The page listens for public manufacturer data,
-            validates the campaign identity, then maps the minor value to local content.
+            No connection is made for campaign detection. The page listens for public
+            manufacturer data, validates the campaign identity, then maps the minor value
+            to local content. GATT read/notify remains available to diagnostic apps.
           </p>
           <div className="privacy-pill">Designed as a foreground, consent-led demo</div>
         </div>
         <ol className="signal-steps">
-          <li><span>1</span><div><h3>Broadcast</h3><p>Each ESP32 repeats a 30-byte legacy BLE advertisement.</p></div></li>
+          <li><span>1</span><div><h3>Broadcast</h3><p>Each ESP32 repeats the iBeacon frame and answers active scans as SoDBeacon.</p></div></li>
           <li><span>2</span><div><h3>Recognize</h3><p>UUID <code>F0E1…1E0F</code>, major <code>100</code>, minor <code>1–4</code>.</p></div></li>
           <li><span>3</span><div><h3>Reveal</h3><p>A nearby RSSI opens the matched offer with a 20-second frequency cap.</p></div></li>
         </ol>
