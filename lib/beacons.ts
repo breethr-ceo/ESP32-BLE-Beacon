@@ -13,7 +13,7 @@ export type IBeaconScanOptions = {
 };
 
 export type SoDBeaconDeviceOptions = {
-  filters: Array<{ name: string }>;
+  acceptAllDevices: true;
   optionalManufacturerData: number[];
 };
 
@@ -87,7 +87,11 @@ export function createIBeaconScanOptions(): IBeaconScanOptions {
 
 export function createSoDBeaconDeviceOptions(): SoDBeaconDeviceOptions {
   return {
-    filters: [{ name: SOD_BEACON_NAME }],
+    // The iBeacon packet fills almost all 31 legacy advertising bytes, so the
+    // name is sent separately as a scan response. Chrome on macOS may not join
+    // those two packets while applying a requestDevice name filter. Let the
+    // user choose from all connectable BLE peripherals instead.
+    acceptAllDevices: true,
     // Let advertisementreceived expose Apple's 0x004C manufacturer payload.
     // This grants data access only; the page never opens a GATT connection.
     optionalManufacturerData: [APPLE_COMPANY_ID],

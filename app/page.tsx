@@ -21,6 +21,7 @@ import {
 
 type ScanState = "idle" | "requesting" | "scanning" | "error";
 type Capability = "checking" | "ready" | "insecure" | "unsupported" | "unavailable";
+type RequestMode = "chooser" | "direct" | null;
 
 interface BluetoothLEScan {
   active: boolean;
@@ -174,6 +175,7 @@ export default function Home() {
   const [directScanSupported, setDirectScanSupported] = useState(false);
   const [chooserWatchSupported, setChooserWatchSupported] = useState(false);
   const [scanState, setScanState] = useState<ScanState>("idle");
+  const [requestMode, setRequestMode] = useState<RequestMode>(null);
   const [statusMessage, setStatusMessage] = useState("Ready when you are");
   const [currentOffer, setCurrentOffer] = useState<BeaconOffer | null>(null);
   const [sightings, setSightings] = useState<Record<string, BeaconSighting>>({});
@@ -293,6 +295,7 @@ export default function Home() {
     }
 
     setScanState("requesting");
+    setRequestMode("direct");
     setScanStats({ ...EMPTY_SCAN_STATS });
     setScanStartedAt(undefined);
     setStatusMessage("Waiting for Bluetooth permission…");
@@ -307,16 +310,18 @@ export default function Home() {
         return;
       }
       scanRef.current = scan;
+      setRequestMode(null);
       setScanState("scanning");
       setScanStartedAt(Date.now());
       setStatusMessage("Scan active. Waiting for nearby BLE advertisements…");
     } catch (error) {
       if (!mountedRef.current) return;
       const message = error instanceof BluetoothPermissionTimeoutError
-        ? "Direct scan permission timed out. Click Add SoDBeacon to use Chrome's device chooser, then select the beacon; the page will watch its advertisements without connecting."
+        ? "Direct scan permission timed out. Use Choose SoDBeacon instead; it opens Chrome's standard BLE device chooser."
         : error instanceof Error
           ? error.message
           : String(error);
+      setRequestMode(null);
       setScanState("error");
       setStatusMessage(message || "The Bluetooth scan could not start");
     }
@@ -332,11 +337,12 @@ export default function Home() {
 
     const alreadyWatching = watchedDevicesRef.current.size > 0;
     setScanState("requesting");
+    setRequestMode("chooser");
     if (!alreadyWatching) {
       setScanStats({ ...EMPTY_SCAN_STATS });
       setScanStartedAt(undefined);
     }
-    setStatusMessage(`Choose one ${SOD_BEACON_NAME} in Chrome's Bluetooth dialog…`);
+    setStatusMessage(`Chrome will show connectable BLE devices. Select ${SOD_BEACON_NAME}…`);
 
     try {
       const device = await bluetooth.requestDevice(createSoDBeaconDeviceOptions());
@@ -382,6 +388,8 @@ export default function Home() {
         setScanState("error");
         setStatusMessage(message || "The beacon was not selected");
       }
+    } finally {
+      if (mountedRef.current) setRequestMode(null);
     }
   };
 
@@ -394,6 +402,7 @@ export default function Home() {
     }
     watchedDevicesRef.current.clear();
     setWatchedDeviceCount(0);
+    setRequestMode(null);
     setScanState("idle");
     setScanStartedAt(undefined);
     setStatusMessage("Scan stopped");
@@ -517,18 +526,18 @@ export default function Home() {
           </dl>
 
           <div className="scanner-actions">
-            <button className="primary-button" onClick={startScan} disabled={startDisabled}>
-              {scanState === "requesting" ? "Requesting…" : isScanning ? "Scanning…" : "Start scanner"}
+            <button className="primary-button" onClick={addBeacon} disabled={chooserDisabled}>
+              {requestMode === "chooser" ? "Opening chooser…" : watchedDeviceCount > 0 ? "Add another" : "Choose SoDBeacon"}
             </button>
-            <button className="chooser-button" onClick={addBeacon} disabled={chooserDisabled}>
-              {watchedDeviceCount > 0 ? "Add another" : "Add SoDBeacon"}
+            <button className="direct-button" onClick={startScan} disabled={startDisabled}>
+              {requestMode === "direct" ? "Requesting…" : isScanning ? "Scanning…" : "Direct scan"}
             </button>
             <button className="stop-button" onClick={stopScan} disabled={!isScanning}>
               Stop
             </button>
           </div>
           <p className="chooser-note">
-            If direct permission stalls, select each board once with Add SoDBeacon. Chrome grants advertisement watching only; this page never calls GATT connect.
+            Recommended: choose each board once in Chrome&apos;s standard BLE list. Direct scan is experimental. Neither route calls GATT connect.
           </p>
           <p className="privacy-note">Campaign trigger: advertisements only · no GATT connection</p>
           <p className="privacy-note privacy-note-secondary">macOS scan: regular Google Chrome only · not an in-app browser</p>

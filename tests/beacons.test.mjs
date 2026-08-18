@@ -37,9 +37,10 @@ test("restricts direct scanning permission to the SoDBeacon name", () => {
   assert.equal("acceptAllAdvertisements" in options, false);
 });
 
-test("builds chooser permission options without requesting a GATT service", () => {
+test("builds an unfiltered chooser without requesting a GATT service", () => {
   const options = createSoDBeaconDeviceOptions();
-  assert.deepEqual(options.filters, [{ name: SOD_BEACON_NAME }]);
+  assert.equal(options.acceptAllDevices, true);
+  assert.equal("filters" in options, false);
   assert.deepEqual(options.optionalManufacturerData, [0x004c]);
   assert.equal("optionalServices" in options, false);
 });

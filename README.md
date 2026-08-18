@@ -10,7 +10,7 @@ The offers and brand names are illustrative only. This project is not affiliated
 
 ## Important browser reality
 
-This is a foreground prototype, not a background advertising system. A normal web page cannot silently scan around a person, open itself, or show a pop-up after the tab is closed. The user must open the page, click **Start scanner**, grant permission, and keep the page active. The “pop-up” in this project is an accessible in-page dialog, not a new browser window.
+This is a foreground prototype, not a background advertising system. A normal web page cannot silently scan around a person, open itself, or show a pop-up after the tab is closed. The user must open the page, click **Choose SoDBeacon**, grant permission, and keep the page active. The “pop-up” in this project is an accessible in-page dialog, not a new browser window.
 
 BLE advertisement scanning uses the experimental `navigator.bluetooth.requestLEScan()` API. The Web Bluetooth Community Group currently lists advertisement scanning as available behind Chrome’s experimental web-platform flag on **macOS and Android**, and not implemented for **Windows**. Chrome/Edge on Windows can run and preview the site, but cannot directly receive these broadcast-only iBeacon frames. Safari and Firefox do not implement Web Bluetooth.
 
@@ -128,13 +128,15 @@ npm run build
 2. Open `chrome://flags/#enable-experimental-web-platform-features`.
 3. Set **Experimental Web Platform features** to **Enabled**, then relaunch Chrome.
 4. In **System Settings → Privacy & Security → Bluetooth**, allow Chrome if it is listed.
-5. Open the page on `localhost` or HTTPS and click **Start scanner**.
+5. Open the page on `localhost` or HTTPS and click **Choose SoDBeacon**.
 6. Accept Chrome’s Bluetooth scan prompt.
 7. Bring one flashed ESP32 close. At RSSI `-86 dBm` or stronger, the mapped offer dialog appears.
 
 Use the site in the normal Google Chrome application, not an embedded preview or in-app browser. Embedded browsers can display the page and may even show a permission prompt, but they do not provide a reliable BLE advertisement-scanning session. The direct scan now requests only advertisements named `SoDBeacon`, rather than every nearby BLE advertisement.
 
-If direct permission does not finish within 20 seconds, click **Add SoDBeacon**. Chrome opens its standard Bluetooth chooser. Select one physical board and the page will watch that device's advertisements without connecting to its GATT server. Repeat **Add another** once for each of the other boards. **Stop** cancels both direct scans and chooser-authorized advertisement watchers.
+Use **Choose SoDBeacon** as the recommended route. Chrome opens its standard Bluetooth chooser and intentionally shows all connectable BLE peripherals because macOS Chrome may not match a name located only in a scan-response packet. Select the entry named `SoDBeacon`; the page watches that device's advertisements without connecting to its GATT server. Repeat **Add another** once for each remaining board. **Stop** cancels both chooser-authorized watchers and direct scans.
+
+**Direct scan** retains the experimental name-filtered `requestLEScan()` route for comparison. Its permission dialog is not a general device browser and it may deliver no events even when Bluetooth Internals sees the ESP32.
 
 Chrome flags are experimental and may change or disappear. If the page says advertisement scanning is unavailable, use the four preview cards and check the current implementation-status link above.
 
@@ -149,7 +151,7 @@ Direct iBeacon advertisement scanning is not currently available to a Windows we
 
 ## Runtime behavior
 
-1. **Start scanner** requests a name-filtered foreground advertisement scan. If that experimental permission flow stalls, **Add SoDBeacon** grants one named device at a time through Chrome's chooser and starts `watchAdvertisements()`.
+1. **Choose SoDBeacon** opens Chrome's standard unfiltered BLE chooser, grants one selected device at a time, and starts `watchAdvertisements()`. **Direct scan** retains the experimental name-filtered foreground scanner for comparison.
 2. Neither route establishes a GATT connection. Received advertisements are processed locally and uploaded nowhere.
 3. `lib/beacons.ts` selects manufacturer data for company ID `0x004C`, then validates the iBeacon `02 15` prefix, UUID, and major value.
 4. Minor `1–4` selects the matching offer.
@@ -169,9 +171,9 @@ RSSI-based distance is only an estimate. Walls, shelving, people, antenna orient
 - Open it in the normal Google Chrome application, not an embedded preview or in-app browser.
 - Confirm Bluetooth is on and Chrome has OS-level Bluetooth permission.
 - Confirm `requestLEScan` support with `"requestLEScan" in navigator.bluetooth` in Chrome DevTools.
-- If direct permission times out, click **Add SoDBeacon**, select a board, and repeat **Add another** for the remaining boards. This permission route still reads advertisements and does not connect to GATT.
+- Prefer **Choose SoDBeacon**, select the entry named `SoDBeacon`, and repeat **Add another** for the remaining boards. This permission route still reads advertisements and does not connect to GATT.
 - On macOS/Android, enable the experimental web-platform flag and relaunch Chrome.
-- Keep the scanner tab visible. Chromium stops an advertisement scan when its page is hidden; click **Start scanner** again after returning to it.
+- Keep the scanner tab visible. Chromium may stop advertisement delivery when its page is hidden; choose the beacon again after returning if needed.
 - Watch the scanner counters: **All ads = 0** means Chrome/OS is not delivering advertisements; **SoD name > 0** confirms the scan-response name arrived; **All ads > 0, Apple = 0** means BLE works but no Apple manufacturer frame is arriving; **Apple > 0, iBeacon = 0** means the payload is not parsing as iBeacon; **iBeacon > 0, Matched = 0** means UUID, major, or minor differs from the campaign map.
 - Open `chrome://bluetooth-internals` in Chrome to check whether Chromium itself can see nearby BLE devices. If it sees none, the problem is below the web page (Chrome, macOS permission, adapter, or radio state).
 - Test the ESP32 packet with a native BLE scanner before debugging the page.
