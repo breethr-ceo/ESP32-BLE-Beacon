@@ -6,6 +6,16 @@ export const BEACON_UUID_BYTES = [
   0x78, 0x69, 0x5a, 0x4b, 0x3c, 0x2d, 0x1e, 0x0f,
 ] as const;
 
+export type IBeaconScanOptions = {
+  filters: Array<{
+    manufacturerData: Array<{
+      companyIdentifier: number;
+      dataPrefix: Uint8Array;
+    }>;
+  }>;
+  keepRepeatedDevices: boolean;
+};
+
 export type BeaconOffer = {
   id: "coca-cola" | "maggi" | "zepto" | "apple";
   brand: string;
@@ -63,6 +73,24 @@ export const OFFERS: readonly BeaconOffer[] = [
     cta: "Use demo offer",
   },
 ] as const;
+
+export function createIBeaconScanOptions(): IBeaconScanOptions {
+  return {
+    filters: [
+      {
+        // Chromium's requestLEScan implementation expects manufacturerData to
+        // be iterable, using the same filter shape as requestDevice.
+        manufacturerData: [
+          {
+            companyIdentifier: APPLE_COMPANY_ID,
+            dataPrefix: new Uint8Array([0x02, 0x15, ...BEACON_UUID_BYTES]),
+          },
+        ],
+      },
+    ],
+    keepRepeatedDevices: true,
+  };
+}
 
 function uuidFromBytes(bytes: Uint8Array) {
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");

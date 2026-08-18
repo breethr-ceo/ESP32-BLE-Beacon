@@ -4,11 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   APPLE_COMPANY_ID,
   BEACON_MAJOR,
-  BEACON_UUID_BYTES,
   BEACON_UUID_DISPLAY,
   OFFERS,
   type BeaconOffer,
   type ParsedIBeacon,
+  createIBeaconScanOptions,
   findOffer,
   parseIBeacon,
 } from "../lib/beacons";
@@ -27,12 +27,9 @@ interface BluetoothAdvertisementEvent extends Event {
 }
 
 interface BluetoothScanner {
-  requestLEScan?: (options: {
-    filters: Array<{
-      manufacturerData: Record<number, { dataPrefix: Uint8Array }>;
-    }>;
-    keepRepeatedDevices: boolean;
-  }) => Promise<BluetoothLEScan>;
+  requestLEScan?: (
+    options: ReturnType<typeof createIBeaconScanOptions>,
+  ) => Promise<BluetoothLEScan>;
   addEventListener: (
     type: "advertisementreceived",
     listener: (event: Event) => void,
@@ -212,22 +209,7 @@ export default function Home() {
     setScanState("requesting");
     setStatusMessage("Waiting for Bluetooth permission…");
     try {
-      scanRef.current = await bluetooth.requestLEScan({
-        filters: [
-          {
-            manufacturerData: {
-              [APPLE_COMPANY_ID]: {
-                dataPrefix: new Uint8Array([
-                  0x02,
-                  0x15,
-                  ...BEACON_UUID_BYTES,
-                ]),
-              },
-            },
-          },
-        ],
-        keepRepeatedDevices: true,
-      });
+      scanRef.current = await bluetooth.requestLEScan(createIBeaconScanOptions());
       setScanState("scanning");
       setStatusMessage("Listening for four campaign beacons");
     } catch (error) {
