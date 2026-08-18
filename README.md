@@ -123,9 +123,9 @@ Direct iBeacon advertisement scanning is not currently available to a Windows we
 
 ## Runtime behavior
 
-1. The page requests a filtered BLE scan after a click.
-2. The browser exposes manufacturer data for company ID `0x004C`.
-3. `lib/beacons.ts` validates the iBeacon `02 15` prefix, UUID, and major value.
+1. After a click, the page requests a foreground advertisement scan and displays live packet counters.
+2. All received advertisements are processed locally; the page keeps no identities and uploads nothing.
+3. `lib/beacons.ts` selects manufacturer data for company ID `0x004C`, then validates the iBeacon `02 15` prefix, UUID, and major value.
 4. Minor `1–4` selects the matching offer.
 5. The page records RSSI and opens the offer only at `-86 dBm` or stronger.
 6. The same offer has a 20-second pop-up cooldown to avoid rapid repetition.
@@ -144,6 +144,9 @@ RSSI-based distance is only an estimate. Walls, shelving, people, antenna orient
 - Confirm Bluetooth is on and Chrome has OS-level Bluetooth permission.
 - Confirm `requestLEScan` support with `"requestLEScan" in navigator.bluetooth` in Chrome DevTools.
 - On macOS/Android, enable the experimental web-platform flag and relaunch Chrome.
+- Keep the scanner tab visible. Chromium stops an advertisement scan when its page is hidden; click **Start scanner** again after returning to it.
+- Watch the scanner counters: **All ads = 0** means Chrome/OS is not delivering advertisements; **All ads > 0, Apple = 0** means BLE works but no Apple manufacturer frame is arriving; **Apple > 0, iBeacon = 0** means the payload is not parsing as iBeacon; **iBeacon > 0, Matched = 0** means UUID, major, or minor differs from the campaign map.
+- Open `chrome://bluetooth-internals` in Chrome to check whether Chromium itself can see nearby BLE devices. If it sees none, the problem is below the web page (Chrome, macOS permission, adapter, or radio state).
 - Test the ESP32 packet with a native BLE scanner before debugging the page.
 - Move the ESP32 within one or two metres and keep the page in the foreground.
 
@@ -164,6 +167,7 @@ Try a known data-capable cable, select the correct port, disconnect other serial
 - BLE advertisements are public and unencrypted. Anyone nearby can read or copy these identifiers.
 - Do not use UUID/major/minor as authentication, proof of presence, or authorization for payments.
 - Obtain explicit user consent before scanning, explain why Bluetooth is needed, and provide a visible stop control.
+- The demo requests the foreground advertisement stream to make scan failures diagnosable, then filters packets locally. Do not retain or upload unrelated advertisement data.
 - Apply frequency caps and avoid surprise dialogs. The included 20-second cap is only for a short demo; real campaigns should be much less intrusive.
 - Keep offer rules on a trusted backend if discounts have monetary value, and validate redemption server-side.
 - Follow local privacy, advertising, trademark, and electronic-communications requirements before any real deployment.

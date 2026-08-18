@@ -23,6 +23,8 @@ test("server-renders the finished Beacon Shelf experience", async () => {
   assert.match(html, /Walk in\./);
   assert.match(html, /Start scanner/);
   assert.match(html, /regular Google Chrome only/);
+  assert.match(html, /Live Bluetooth scan diagnostics/);
+  assert.match(html, /All ads/);
   assert.match(html, /Coca-Cola/);
   assert.match(html, /MAGGI/);
   assert.match(html, /zepto/);

@@ -7,12 +7,7 @@ export const BEACON_UUID_BYTES = [
 ] as const;
 
 export type IBeaconScanOptions = {
-  filters: Array<{
-    manufacturerData: Array<{
-      companyIdentifier: number;
-      dataPrefix: Uint8Array;
-    }>;
-  }>;
+  acceptAllAdvertisements: true;
   keepRepeatedDevices: boolean;
 };
 
@@ -76,18 +71,10 @@ export const OFFERS: readonly BeaconOffer[] = [
 
 export function createIBeaconScanOptions(): IBeaconScanOptions {
   return {
-    filters: [
-      {
-        // Chromium's requestLEScan implementation expects manufacturerData to
-        // be iterable, using the same filter shape as requestDevice.
-        manufacturerData: [
-          {
-            companyIdentifier: APPLE_COMPANY_ID,
-            dataPrefix: new Uint8Array([0x02, 0x15, ...BEACON_UUID_BYTES]),
-          },
-        ],
-      },
-    ],
+    // Advertisement scanning is still experimental in Chromium. Receiving the
+    // foreground stream here and filtering it below lets the UI distinguish a
+    // browser/OS scan failure from a non-matching beacon frame.
+    acceptAllAdvertisements: true,
     keepRepeatedDevices: true,
   };
 }

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  APPLE_COMPANY_ID,
   BEACON_MAJOR,
   BEACON_UUID_BYTES,
   OFFERS,
@@ -29,18 +28,11 @@ function frameForMinor(minor, includeCompanyIdentifier = false) {
   return payload;
 }
 
-test("builds an iterable Chromium manufacturer-data scan filter", () => {
+test("builds a broad foreground scan so campaign filtering happens in JavaScript", () => {
   const options = createIBeaconScanOptions();
-  const manufacturerData = options.filters[0].manufacturerData;
-
-  assert.ok(Array.isArray(manufacturerData));
-  assert.equal(manufacturerData[0].companyIdentifier, APPLE_COMPANY_ID);
-  assert.ok(manufacturerData[0].dataPrefix instanceof Uint8Array);
-  assert.deepEqual(
-    Array.from(manufacturerData[0].dataPrefix),
-    [0x02, 0x15, ...BEACON_UUID_BYTES],
-  );
+  assert.equal(options.acceptAllAdvertisements, true);
   assert.equal(options.keepRepeatedDevices, true);
+  assert.equal("filters" in options, false);
 });
 
 test("parses browser-style iBeacon manufacturer data", () => {

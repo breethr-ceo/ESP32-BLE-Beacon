@@ -51,8 +51,23 @@ type BeaconSighting = {
   seenAt: number;
 };
 
+type ScanStats = {
+  advertisements: number;
+  appleFrames: number;
+  iBeaconFrames: number;
+  campaignMatches: number;
+  lastAdvertisementAt?: number;
+  lastRssi?: number;
+};
+
 const MINIMUM_RSSI = -86;
 const POPUP_COOLDOWN_MS = 20_000;
+const EMPTY_SCAN_STATS: ScanStats = {
+  advertisements: 0,
+  appleFrames: 0,
+  iBeaconFrames: 0,
+  campaignMatches: 0,
+};
 
 function getBluetooth(): BluetoothScanner | undefined {
   return (navigator as BluetoothNavigator).bluetooth;
@@ -132,6 +147,8 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState("Ready when you are");
   const [currentOffer, setCurrentOffer] = useState<BeaconOffer | null>(null);
   const [sightings, setSightings] = useState<Record<string, BeaconSighting>>({});
+  const [scanStats, setScanStats] = useState<ScanStats>(EMPTY_SCAN_STATS);
+  const [scanStartedAt, setScanStartedAt] = useState<number>();
   const [clock, setClock] = useState(0);
   const [toast, setToast] = useState("");
   const scanRef = useRef<BluetoothLEScan | null>(null);
@@ -177,15 +194,21 @@ export default function Home() {
   const handleAdvertisement = useCallback((event: Event) => {
     const advertisement = event as BluetoothAdvertisementEvent;
     const appleData = advertisement.manufacturerData?.get(APPLE_COMPANY_ID);
-    if (!appleData) return;
-
-    const parsed = parseIBeacon(appleData, advertisement.rssi);
-    if (!parsed) return;
-
-    const offer = findOffer(parsed);
-    if (!offer) return;
-
+    const parsed = appleData ? parseIBeacon(appleData, advertisement.rssi) : null;
+    const offer = parsed ? findOffer(parsed) : undefined;
     const seenAt = Date.now();
+
+    setScanStats((previous) => ({
+      advertisements: previous.advertisements + 1,
+      appleFrames: previous.appleFrames + (appleData ? 1 : 0),
+      iBeaconFrames: previous.iBeaconFrames + (parsed ? 1 : 0),
+      campaignMatches: previous.campaignMatches + (offer ? 1 : 0),
+      lastAdvertisementAt: seenAt,
+      lastRssi: advertisement.rssi,
+    }));
+
+    if (!parsed || !offer) return;
+
     setSightings((previous) => ({
       ...previous,
       [offer.id]: { parsed, seenAt },
@@ -211,6 +234,14 @@ export default function Home() {
     };
   }, [handleAdvertisement]);
 
+  useEffect(() => {
+    if (scanState !== "scanning" || !scanRef.current || scanRef.current.active) return;
+    scanRef.current = null;
+    setScanState("idle");
+    setScanStartedAt(undefined);
+    setStatusMessage("Chrome stopped the scan. Keep this tab visible, then start it again.");
+  }, [clock, scanState]);
+
   const startScan = async () => {
     const bluetooth = getBluetooth();
     if (!bluetooth?.requestLEScan) {
@@ -219,6 +250,8 @@ export default function Home() {
     }
 
     setScanState("requesting");
+    setScanStats({ ...EMPTY_SCAN_STATS });
+    setScanStartedAt(undefined);
     setStatusMessage("Waiting for Bluetooth permission…");
     try {
       const scan = await waitForBluetoothScan(
@@ -232,7 +265,8 @@ export default function Home() {
       }
       scanRef.current = scan;
       setScanState("scanning");
-      setStatusMessage("Listening for four campaign beacons");
+      setScanStartedAt(Date.now());
+      setStatusMessage("Scan active. Waiting for nearby BLE advertisements…");
     } catch (error) {
       if (!mountedRef.current) return;
       const message = error instanceof BluetoothPermissionTimeoutError
@@ -249,6 +283,7 @@ export default function Home() {
     scanRef.current?.stop();
     scanRef.current = null;
     setScanState("idle");
+    setScanStartedAt(undefined);
     setStatusMessage("Scan stopped");
   };
 
@@ -259,8 +294,27 @@ export default function Home() {
     if (capability === "unavailable") {
       return "BLE advertisement scanning is unavailable here. Open this URL in regular Google Chrome on macOS, or use the demo buttons.";
     }
+    if (scanState === "scanning" && scanStats.campaignMatches > 0) {
+      return `Campaign beacon detected. ${scanStats.campaignMatches} matching advertisement${scanStats.campaignMatches === 1 ? "" : "s"} received.`;
+    }
+    if (scanState === "scanning" && scanStats.iBeaconFrames > 0) {
+      return `Chrome received ${scanStats.iBeaconFrames} iBeacon frame${scanStats.iBeaconFrames === 1 ? "" : "s"}, but the UUID, major, or minor did not match this campaign.`;
+    }
+    if (scanState === "scanning" && scanStats.appleFrames > 0) {
+      return `Chrome received ${scanStats.appleFrames} Apple manufacturer frame${scanStats.appleFrames === 1 ? "" : "s"}, but none parsed as iBeacon.`;
+    }
+    if (scanState === "scanning" && scanStats.advertisements > 0) {
+      return `Chrome is receiving BLE advertisements (${scanStats.advertisements}), but none currently contains Apple iBeacon data.`;
+    }
+    if (
+      scanState === "scanning"
+      && scanStartedAt
+      && clock - scanStartedAt >= 8_000
+    ) {
+      return "Scan is active, but Chrome has delivered 0 advertisements. Keep this tab visible and check chrome://bluetooth-internals in another Chrome tab.";
+    }
     return statusMessage;
-  }, [capability, statusMessage]);
+  }, [capability, clock, scanStartedAt, scanState, scanStats, statusMessage]);
 
   const simulateOffer = (offer: BeaconOffer) => {
     const parsed: ParsedIBeacon = {
@@ -338,6 +392,13 @@ export default function Home() {
             <p>{capabilityMessage}</p>
           </div>
 
+          <dl className="scan-metrics" aria-label="Live Bluetooth scan diagnostics">
+            <div><dt>All ads</dt><dd>{scanStats.advertisements}</dd></div>
+            <div><dt>Apple</dt><dd>{scanStats.appleFrames}</dd></div>
+            <div><dt>iBeacon</dt><dd>{scanStats.iBeaconFrames}</dd></div>
+            <div><dt>Matched</dt><dd>{scanStats.campaignMatches}</dd></div>
+          </dl>
+
           <div className="scanner-actions">
             <button className="primary-button" onClick={startScan} disabled={startDisabled}>
               {scanState === "requesting" ? "Requesting…" : isScanning ? "Scanning…" : "Start scanner"}
@@ -347,7 +408,9 @@ export default function Home() {
             </button>
           </div>
           <p className="privacy-note">macOS scan: regular Google Chrome only · not an in-app browser</p>
-          <p className="privacy-note privacy-note-secondary">Foreground only · nothing is uploaded · RSSI trigger ≥ {MINIMUM_RSSI} dBm</p>
+          <p className="privacy-note privacy-note-secondary">
+            Foreground only · ads filtered locally · nothing uploaded · last signal {scanStats.lastAdvertisementAt ? `${scanStats.lastRssi ?? "—"} dBm` : "—"}
+          </p>
         </aside>
       </section>
 

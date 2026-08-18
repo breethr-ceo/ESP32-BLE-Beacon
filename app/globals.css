@@ -157,6 +157,11 @@ button { color: inherit; }
 .scanner-message p { margin: 0; color: #bebeb4; font-size: 12px; line-height: 1.5; }
 .scanner-unavailable span, .scanner-unsupported span, .scanner-insecure span, .scanner-error span { background: rgba(251,97,79,.15); color: #ff9184; }
 
+.scan-metrics { position: relative; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); margin: 10px 0 0; border: 1px solid rgba(255,255,255,.09); border-right: 0; }
+.scan-metrics div { min-width: 0; padding: 10px; border-right: 1px solid rgba(255,255,255,.09); }
+.scan-metrics dt { color: #77776f; font-size: 8px; letter-spacing: .11em; text-transform: uppercase; }
+.scan-metrics dd { margin: 4px 0 0; color: #f6f4e9; font-family: var(--font-geist-mono), monospace; font-size: 14px; }
+
 .scanner-actions { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 15px; }
 .primary-button, .stop-button { min-height: 52px; border: 0; font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; cursor: pointer; transition: transform .2s, opacity .2s; }
 .primary-button { background: var(--acid); }
