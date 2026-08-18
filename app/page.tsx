@@ -12,6 +12,10 @@ import {
   findOffer,
   parseIBeacon,
 } from "../lib/beacons";
+import {
+  BluetoothPermissionTimeoutError,
+  waitForBluetoothScan,
+} from "../lib/scan-timeout";
 
 type ScanState = "idle" | "requesting" | "scanning" | "error";
 type Capability = "checking" | "ready" | "insecure" | "unsupported" | "unavailable";
@@ -132,6 +136,14 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const scanRef = useRef<BluetoothLEScan | null>(null);
   const lastPopupRef = useRef<Record<string, number>>({});
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const capabilityCheck = window.setTimeout(() => {
@@ -209,11 +221,25 @@ export default function Home() {
     setScanState("requesting");
     setStatusMessage("Waiting for Bluetooth permission…");
     try {
-      scanRef.current = await bluetooth.requestLEScan(createIBeaconScanOptions());
+      const scan = await waitForBluetoothScan(
+        bluetooth.requestLEScan(createIBeaconScanOptions()),
+        undefined,
+        (lateScan) => lateScan.stop(),
+      );
+      if (!mountedRef.current) {
+        scan.stop();
+        return;
+      }
+      scanRef.current = scan;
       setScanState("scanning");
       setStatusMessage("Listening for four campaign beacons");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      if (!mountedRef.current) return;
+      const message = error instanceof BluetoothPermissionTimeoutError
+        ? "Bluetooth permission timed out. Open this URL in regular Google Chrome (not an in-app browser), enable Experimental Web Platform features, allow Chrome in macOS Bluetooth settings, then retry."
+        : error instanceof Error
+          ? error.message
+          : String(error);
       setScanState("error");
       setStatusMessage(message || "The Bluetooth scan could not start");
     }
@@ -231,7 +257,7 @@ export default function Home() {
     if (capability === "insecure") return "Use HTTPS or localhost to unlock Bluetooth.";
     if (capability === "unsupported") return "This browser does not expose Web Bluetooth.";
     if (capability === "unavailable") {
-      return "BLE advertisement scanning is unavailable. Use the demo buttons or see the setup guide.";
+      return "BLE advertisement scanning is unavailable here. Open this URL in regular Google Chrome on macOS, or use the demo buttons.";
     }
     return statusMessage;
   }, [capability, statusMessage]);
@@ -254,6 +280,14 @@ export default function Home() {
 
   const isScanning = scanState === "scanning";
   const startDisabled = capability !== "ready" || ["requesting", "scanning"].includes(scanState);
+  const scannerMessageKind = scanState === "error" ? "error" : capability;
+  const scannerMessageLabel = isScanning
+    ? "LIVE"
+    : scanState === "error"
+      ? "ERROR"
+      : capability === "ready"
+        ? "READY"
+        : "NOTE";
 
   return (
     <main className="site-shell">
@@ -299,8 +333,8 @@ export default function Home() {
             <div className="radar-sweep" />
           </div>
 
-          <div className={`scanner-message scanner-${capability}`}>
-            <span>{isScanning ? "LIVE" : capability === "ready" ? "READY" : "NOTE"}</span>
+          <div className={`scanner-message scanner-${scannerMessageKind}`} aria-live="polite">
+            <span>{scannerMessageLabel}</span>
             <p>{capabilityMessage}</p>
           </div>
 
@@ -312,7 +346,8 @@ export default function Home() {
               Stop
             </button>
           </div>
-          <p className="privacy-note">Foreground only · nothing is uploaded · RSSI trigger ≥ {MINIMUM_RSSI} dBm</p>
+          <p className="privacy-note">macOS scan: regular Google Chrome only · not an in-app browser</p>
+          <p className="privacy-note privacy-note-secondary">Foreground only · nothing is uploaded · RSSI trigger ≥ {MINIMUM_RSSI} dBm</p>
         </aside>
       </section>
 

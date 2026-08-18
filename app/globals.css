@@ -155,7 +155,7 @@ button { color: inherit; }
 .scanner-message { position: relative; z-index: 2; display: grid; grid-template-columns: auto 1fr; gap: 13px; align-items: start; min-height: 59px; padding: 14px 15px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.09); }
 .scanner-message span { margin-top: 2px; padding: 4px 7px; background: rgba(216,255,84,.12); color: var(--acid); font-size: 8px; letter-spacing: .15em; }
 .scanner-message p { margin: 0; color: #bebeb4; font-size: 12px; line-height: 1.5; }
-.scanner-unavailable span, .scanner-unsupported span, .scanner-insecure span { background: rgba(251,97,79,.15); color: #ff9184; }
+.scanner-unavailable span, .scanner-unsupported span, .scanner-insecure span, .scanner-error span { background: rgba(251,97,79,.15); color: #ff9184; }
 
 .scanner-actions { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 15px; }
 .primary-button, .stop-button { min-height: 52px; border: 0; font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; cursor: pointer; transition: transform .2s, opacity .2s; }
@@ -164,6 +164,7 @@ button { color: inherit; }
 .primary-button:hover:not(:disabled), .stop-button:hover:not(:disabled) { transform: translateY(-2px); }
 .primary-button:disabled, .stop-button:disabled { cursor: not-allowed; opacity: .38; }
 .privacy-note { position: relative; z-index: 2; margin: 14px 0 0; color: #74746d; font-size: 9px; text-align: center; text-transform: uppercase; letter-spacing: .08em; }
+.privacy-note-secondary { margin-top: 6px; font-size: 8px; }
 
 .beacon-section { padding: 100px 4.5vw 110px; }
 .section-heading { display: flex; justify-content: space-between; gap: 40px; align-items: end; margin-bottom: 45px; }

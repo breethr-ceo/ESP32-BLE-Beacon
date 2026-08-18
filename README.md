@@ -108,6 +108,8 @@ npm run build
 6. Accept Chrome’s Bluetooth scan prompt.
 7. Bring one flashed ESP32 close. At RSSI `-86 dBm` or stronger, the mapped offer dialog appears.
 
+Use the site in the normal Google Chrome application, not an embedded preview or in-app browser. Embedded browsers can display the page and may even show a permission prompt, but they do not provide a reliable BLE advertisement-scanning session. If Chrome does not finish the permission request within 20 seconds, the page now cancels the waiting state and shows the required setup instead of remaining stuck.
+
 Chrome flags are experimental and may change or disappear. If the page says advertisement scanning is unavailable, use the four preview cards and check the current implementation-status link above.
 
 ### Windows: run and preview
@@ -135,7 +137,10 @@ RSSI-based distance is only an estimate. Walls, shelving, people, antenna orient
 
 ### The Serial Monitor prints the right frame, but the page sees nothing
 
+- One startup block ending in “Advertising continuously” is the expected serial output. The BLE stack advertises in the background; the sketch does not print once per packet.
+- Opening Serial Monitor can reset some ESP32 boards and print the startup block a second time. A continuously repeating block indicates resets and should be investigated as a power or USB-cable issue.
 - Verify the page is on HTTPS or `localhost`.
+- Open it in the normal Google Chrome application, not an embedded preview or in-app browser.
 - Confirm Bluetooth is on and Chrome has OS-level Bluetooth permission.
 - Confirm `requestLEScan` support with `"requestLEScan" in navigator.bluetooth` in Chrome DevTools.
 - On macOS/Android, enable the experimental web-platform flag and relaunch Chrome.

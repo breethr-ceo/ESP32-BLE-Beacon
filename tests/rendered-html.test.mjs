@@ -22,6 +22,7 @@ test("server-renders the finished Beacon Shelf experience", async () => {
   assert.match(html, /<title>Beacon Shelf — ESP32 iBeacon Offer Demo<\/title>/i);
   assert.match(html, /Walk in\./);
   assert.match(html, /Start scanner/);
+  assert.match(html, /regular Google Chrome only/);
   assert.match(html, /Coca-Cola/);
   assert.match(html, /MAGGI/);
   assert.match(html, /zepto/);
