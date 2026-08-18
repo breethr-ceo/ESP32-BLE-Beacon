@@ -4,7 +4,9 @@ import {
   BEACON_MAJOR,
   BEACON_UUID_BYTES,
   OFFERS,
+  SOD_BEACON_NAME,
   createIBeaconScanOptions,
+  createSoDBeaconDeviceOptions,
   findOffer,
   parseIBeacon,
 } from "../lib/beacons.ts";
@@ -28,11 +30,18 @@ function frameForMinor(minor, includeCompanyIdentifier = false) {
   return payload;
 }
 
-test("builds a broad foreground scan so campaign filtering happens in JavaScript", () => {
+test("restricts direct scanning permission to the SoDBeacon name", () => {
   const options = createIBeaconScanOptions();
-  assert.equal(options.acceptAllAdvertisements, true);
+  assert.deepEqual(options.filters, [{ name: SOD_BEACON_NAME }]);
   assert.equal(options.keepRepeatedDevices, true);
-  assert.equal("filters" in options, false);
+  assert.equal("acceptAllAdvertisements" in options, false);
+});
+
+test("builds chooser permission options without requesting a GATT service", () => {
+  const options = createSoDBeaconDeviceOptions();
+  assert.deepEqual(options.filters, [{ name: SOD_BEACON_NAME }]);
+  assert.deepEqual(options.optionalManufacturerData, [0x004c]);
+  assert.equal("optionalServices" in options, false);
 });
 
 test("parses browser-style iBeacon manufacturer data", () => {

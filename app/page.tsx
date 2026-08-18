@@ -6,9 +6,11 @@ import {
   BEACON_MAJOR,
   BEACON_UUID_DISPLAY,
   OFFERS,
+  SOD_BEACON_NAME,
   type BeaconOffer,
   type ParsedIBeacon,
   createIBeaconScanOptions,
+  createSoDBeaconDeviceOptions,
   findOffer,
   parseIBeacon,
 } from "../lib/beacons";
@@ -28,14 +30,31 @@ interface BluetoothLEScan {
 interface BluetoothAdvertisementEvent extends Event {
   manufacturerData: Map<number, DataView>;
   name?: string;
-  device?: { name?: string | null };
+  device?: BluetoothWatchedDevice;
   rssi?: number;
+}
+
+interface BluetoothWatchedDevice {
+  id: string;
+  name?: string | null;
+  watchAdvertisements?: (options?: { signal?: AbortSignal }) => Promise<void>;
+  addEventListener: (
+    type: "advertisementreceived",
+    listener: (event: Event) => void,
+  ) => void;
+  removeEventListener: (
+    type: "advertisementreceived",
+    listener: (event: Event) => void,
+  ) => void;
 }
 
 interface BluetoothScanner {
   requestLEScan?: (
     options: ReturnType<typeof createIBeaconScanOptions>,
   ) => Promise<BluetoothLEScan>;
+  requestDevice?: (
+    options: ReturnType<typeof createSoDBeaconDeviceOptions>,
+  ) => Promise<BluetoothWatchedDevice>;
   addEventListener: (
     type: "advertisementreceived",
     listener: (event: Event) => void,
@@ -51,6 +70,11 @@ type BluetoothNavigator = Navigator & { bluetooth?: BluetoothScanner };
 type BeaconSighting = {
   parsed: ParsedIBeacon;
   seenAt: number;
+};
+
+type WatchedBeacon = {
+  controller: AbortController;
+  device: BluetoothWatchedDevice;
 };
 
 type ScanStats = {
@@ -147,6 +171,8 @@ function OfferModal({
 
 export default function Home() {
   const [capability, setCapability] = useState<Capability>("checking");
+  const [directScanSupported, setDirectScanSupported] = useState(false);
+  const [chooserWatchSupported, setChooserWatchSupported] = useState(false);
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [statusMessage, setStatusMessage] = useState("Ready when you are");
   const [currentOffer, setCurrentOffer] = useState<BeaconOffer | null>(null);
@@ -155,7 +181,9 @@ export default function Home() {
   const [scanStartedAt, setScanStartedAt] = useState<number>();
   const [clock, setClock] = useState(0);
   const [toast, setToast] = useState("");
+  const [watchedDeviceCount, setWatchedDeviceCount] = useState(0);
   const scanRef = useRef<BluetoothLEScan | null>(null);
+  const watchedDevicesRef = useRef<Map<string, WatchedBeacon>>(new Map());
   const lastPopupRef = useRef<Record<string, number>>({});
   const mountedRef = useRef(true);
 
@@ -177,9 +205,11 @@ export default function Home() {
         setCapability("unsupported");
         return;
       }
-      setCapability(
-        typeof bluetooth.requestLEScan === "function" ? "ready" : "unavailable",
-      );
+      const hasDirectScan = typeof bluetooth.requestLEScan === "function";
+      const hasChooserWatch = typeof bluetooth.requestDevice === "function";
+      setDirectScanSupported(hasDirectScan);
+      setChooserWatchSupported(hasChooserWatch);
+      setCapability(hasDirectScan || hasChooserWatch ? "ready" : "unavailable");
     }, 0);
     return () => window.clearTimeout(capabilityCheck);
   }, []);
@@ -205,7 +235,7 @@ export default function Home() {
 
     setScanStats((previous) => ({
       advertisements: previous.advertisements + 1,
-      sodNamedFrames: previous.sodNamedFrames + (advertisedName === "SoDBeacon" ? 1 : 0),
+      sodNamedFrames: previous.sodNamedFrames + (advertisedName === SOD_BEACON_NAME ? 1 : 0),
       appleFrames: previous.appleFrames + (appleData ? 1 : 0),
       iBeaconFrames: previous.iBeaconFrames + (parsed ? 1 : 0),
       campaignMatches: previous.campaignMatches + (offer ? 1 : 0),
@@ -231,17 +261,24 @@ export default function Home() {
   useEffect(() => {
     const bluetooth = getBluetooth();
     if (!bluetooth) return;
+    const watchedDevices = watchedDevicesRef.current;
 
     bluetooth.addEventListener("advertisementreceived", handleAdvertisement);
     return () => {
       bluetooth.removeEventListener("advertisementreceived", handleAdvertisement);
       scanRef.current?.stop();
       scanRef.current = null;
+      for (const { controller, device } of watchedDevices.values()) {
+        controller.abort();
+        device.removeEventListener("advertisementreceived", handleAdvertisement);
+      }
+      watchedDevices.clear();
     };
   }, [handleAdvertisement]);
 
   useEffect(() => {
-    if (scanState !== "scanning" || !scanRef.current || scanRef.current.active) return;
+    if (scanState !== "scanning" || watchedDevicesRef.current.size > 0) return;
+    if (!scanRef.current || scanRef.current.active) return;
     scanRef.current = null;
     setScanState("idle");
     setScanStartedAt(undefined);
@@ -276,7 +313,7 @@ export default function Home() {
     } catch (error) {
       if (!mountedRef.current) return;
       const message = error instanceof BluetoothPermissionTimeoutError
-        ? "Bluetooth permission timed out. Open this URL in regular Google Chrome (not an in-app browser), enable Experimental Web Platform features, allow Chrome in macOS Bluetooth settings, then retry."
+        ? "Direct scan permission timed out. Click Add SoDBeacon to use Chrome's device chooser, then select the beacon; the page will watch its advertisements without connecting."
         : error instanceof Error
           ? error.message
           : String(error);
@@ -285,9 +322,78 @@ export default function Home() {
     }
   };
 
+  const addBeacon = async () => {
+    const bluetooth = getBluetooth();
+    if (!bluetooth?.requestDevice) {
+      setStatusMessage("Chrome's Bluetooth device chooser is unavailable in this browser.");
+      setScanState("error");
+      return;
+    }
+
+    const alreadyWatching = watchedDevicesRef.current.size > 0;
+    setScanState("requesting");
+    if (!alreadyWatching) {
+      setScanStats({ ...EMPTY_SCAN_STATS });
+      setScanStartedAt(undefined);
+    }
+    setStatusMessage(`Choose one ${SOD_BEACON_NAME} in Chrome's Bluetooth dialog…`);
+
+    try {
+      const device = await bluetooth.requestDevice(createSoDBeaconDeviceOptions());
+      if (!device.watchAdvertisements) {
+        throw new Error("Chrome selected the beacon, but advertisement watching is unavailable. Enable Experimental Web Platform features and relaunch Chrome.");
+      }
+
+      if (watchedDevicesRef.current.has(device.id)) {
+        setScanState("scanning");
+        setStatusMessage(`${device.name ?? SOD_BEACON_NAME} is already being watched. Choose Add another beacon for a different board.`);
+        return;
+      }
+
+      const controller = new AbortController();
+      device.addEventListener("advertisementreceived", handleAdvertisement);
+      try {
+        await device.watchAdvertisements({ signal: controller.signal });
+      } catch (error) {
+        device.removeEventListener("advertisementreceived", handleAdvertisement);
+        controller.abort();
+        throw error;
+      }
+
+      if (!mountedRef.current) {
+        controller.abort();
+        device.removeEventListener("advertisementreceived", handleAdvertisement);
+        return;
+      }
+
+      watchedDevicesRef.current.set(device.id, { controller, device });
+      const count = watchedDevicesRef.current.size;
+      setWatchedDeviceCount(count);
+      setScanState("scanning");
+      setScanStartedAt((previous) => previous ?? Date.now());
+      setStatusMessage(`Watching ${count} permitted ${SOD_BEACON_NAME}${count === 1 ? "" : "s"} without a GATT connection.`);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (watchedDevicesRef.current.size > 0) {
+        setScanState("scanning");
+        setStatusMessage(`Still watching ${watchedDevicesRef.current.size} beacon(s). ${message || "No additional beacon was selected."}`);
+      } else {
+        setScanState("error");
+        setStatusMessage(message || "The beacon was not selected");
+      }
+    }
+  };
+
   const stopScan = () => {
     scanRef.current?.stop();
     scanRef.current = null;
+    for (const { controller, device } of watchedDevicesRef.current.values()) {
+      controller.abort();
+      device.removeEventListener("advertisementreceived", handleAdvertisement);
+    }
+    watchedDevicesRef.current.clear();
+    setWatchedDeviceCount(0);
     setScanState("idle");
     setScanStartedAt(undefined);
     setStatusMessage("Scan stopped");
@@ -298,7 +404,7 @@ export default function Home() {
     if (capability === "insecure") return "Use HTTPS or localhost to unlock Bluetooth.";
     if (capability === "unsupported") return "This browser does not expose Web Bluetooth.";
     if (capability === "unavailable") {
-      return "BLE advertisement scanning is unavailable here. Open this URL in regular Google Chrome on macOS, or use the demo buttons.";
+      return "BLE advertisement scanning and watching are unavailable here. Open this URL in regular Google Chrome on macOS, or use the demo buttons.";
     }
     if (scanState === "scanning" && scanStats.campaignMatches > 0) {
       return `Campaign beacon detected. ${scanStats.campaignMatches} matching advertisement${scanStats.campaignMatches === 1 ? "" : "s"} received.`;
@@ -342,7 +448,8 @@ export default function Home() {
   };
 
   const isScanning = scanState === "scanning";
-  const startDisabled = capability !== "ready" || ["requesting", "scanning"].includes(scanState);
+  const startDisabled = !directScanSupported || ["requesting", "scanning"].includes(scanState);
+  const chooserDisabled = !chooserWatchSupported || scanState === "requesting" || (isScanning && watchedDeviceCount === 0);
   const scannerMessageKind = scanState === "error" ? "error" : capability;
   const scannerMessageLabel = isScanning
     ? "LIVE"
@@ -413,10 +520,16 @@ export default function Home() {
             <button className="primary-button" onClick={startScan} disabled={startDisabled}>
               {scanState === "requesting" ? "Requesting…" : isScanning ? "Scanning…" : "Start scanner"}
             </button>
+            <button className="chooser-button" onClick={addBeacon} disabled={chooserDisabled}>
+              {watchedDeviceCount > 0 ? "Add another" : "Add SoDBeacon"}
+            </button>
             <button className="stop-button" onClick={stopScan} disabled={!isScanning}>
               Stop
             </button>
           </div>
+          <p className="chooser-note">
+            If direct permission stalls, select each board once with Add SoDBeacon. Chrome grants advertisement watching only; this page never calls GATT connect.
+          </p>
           <p className="privacy-note">Campaign trigger: advertisements only · no GATT connection</p>
           <p className="privacy-note privacy-note-secondary">macOS scan: regular Google Chrome only · not an in-app browser</p>
           <p className="privacy-note privacy-note-secondary">

@@ -1,5 +1,6 @@
 export const APPLE_COMPANY_ID = 0x004c;
 export const BEACON_MAJOR = 100;
+export const SOD_BEACON_NAME = "SoDBeacon";
 export const BEACON_UUID_DISPLAY = "F0E1D2C3-B4A5-9687-7869-5A4B3C2D1E0F";
 export const BEACON_UUID_BYTES = [
   0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87,
@@ -7,8 +8,13 @@ export const BEACON_UUID_BYTES = [
 ] as const;
 
 export type IBeaconScanOptions = {
-  acceptAllAdvertisements: true;
+  filters: Array<{ name: string }>;
   keepRepeatedDevices: boolean;
+};
+
+export type SoDBeaconDeviceOptions = {
+  filters: Array<{ name: string }>;
+  optionalManufacturerData: number[];
 };
 
 export type BeaconOffer = {
@@ -71,11 +77,20 @@ export const OFFERS: readonly BeaconOffer[] = [
 
 export function createIBeaconScanOptions(): IBeaconScanOptions {
   return {
-    // Advertisement scanning is still experimental in Chromium. Receiving the
-    // foreground stream here and filtering it below lets the UI distinguish a
-    // browser/OS scan failure from a non-matching beacon frame.
-    acceptAllAdvertisements: true,
+    // Restricting permission to the scan-response name avoids asking Chrome for
+    // every nearby BLE advertisement. Campaign identity is still validated
+    // from the iBeacon manufacturer payload before an offer is shown.
+    filters: [{ name: SOD_BEACON_NAME }],
     keepRepeatedDevices: true,
+  };
+}
+
+export function createSoDBeaconDeviceOptions(): SoDBeaconDeviceOptions {
+  return {
+    filters: [{ name: SOD_BEACON_NAME }],
+    // Let advertisementreceived expose Apple's 0x004C manufacturer payload.
+    // This grants data access only; the page never opens a GATT connection.
+    optionalManufacturerData: [APPLE_COMPANY_ID],
   };
 }
 
